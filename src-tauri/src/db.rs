@@ -16,6 +16,82 @@ pub struct Tag {
     pub id: Option<i64>,
     pub name: String,
 }
+// Phase 3: Enhanced domain models
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Notebook {
+    pub id: Option<i64>,
+    pub name: String,
+    pub description: Option<String>,
+    pub parent_id: Option<i64>,
+    pub color: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct NoteVersion {
+    pub id: Option<i64>,
+    pub note_id: i64,
+    pub title: String,
+    pub content: String,
+    pub version_number: i32,
+    pub created_at: String,
+    pub created_by: String,
+    pub change_summary: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct NoteLink {
+    pub id: Option<i64>,
+    pub source_note_id: i64,
+    pub target_note_id: i64,
+    pub link_type: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Template {
+    pub id: Option<i64>,
+    pub name: String,
+    pub description: Option<String>,
+    pub title_template: String,
+    pub content_template: String,
+    pub category: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Attachment {
+    pub id: Option<i64>,
+    pub note_id: i64,
+    pub filename: String,
+    pub filepath: String,
+    pub file_size: i64,
+    pub mime_type: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Collection {
+    pub id: Option<i64>,
+    pub name: String,
+    pub description: Option<String>,
+    pub query_rules: String, // JSON
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VaultStats {
+    pub total_notes: i64,
+    pub total_notebooks: i64,
+    pub total_tags: i64,
+    pub total_versions: i64,
+    pub total_attachments: i64,
+    pub vault_size_bytes: i64,
+}
 
 pub struct Database {
     conn: Connection,
@@ -113,6 +189,9 @@ impl Database {
             END",
             [],
         )?;
+
+        // Apply Phase 3 schema migrations
+        self.apply_phase3_migrations()?;
 
         Ok(())
     }
@@ -371,5 +450,312 @@ mod tests {
 
         let tags = db.get_tags_for_note(note_id).unwrap();
         assert_eq!(tags.len(), 1);
+    }
+}
+
+    // Phase 3: Apply schema migrations for enhanced features
+    fn apply_phase3_migrations(&self) -> Result<()> {
+        // Helper to check if column exists
+        let column_exists = |table: &str, column: &str| -> bool {
+            let query = format!("PRAGMA table_info({})", table);
+            if let Ok(mut stmt) = self.conn.prepare(&query) {
+                let columns: Vec<String> = stmt
+                    .query_map([], |row| row.get::<_, String>(1))
+                    .unwrap()
+                    .filter_map(|r| r.ok())
+                    .collect();
+                columns.contains(&column.to_string())
+            } else {
+                false
+            }
+        };
+
+        // Create notebooks table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS notebooks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                parent_id INTEGER,
+                color TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (parent_id) REFERENCES notebooks(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
+        // Add new columns to notes table if they don't exist
+        if !column_exists("notes", "notebook_id") {
+            self.conn.execute("ALTER TABLE notes ADD COLUMN notebook_id INTEGER REFERENCES notebooks(id)", [])?;
+        }
+        if !column_exists("notes", "status") {
+            self.conn.execute("ALTER TABLE notes ADD COLUMN status TEXT DEFAULT 'active'", [])?;
+        }
+        if !column_exists("notes", "priority") {
+            self.conn.execute("ALTER TABLE notes ADD COLUMN priority INTEGER DEFAULT 0", [])?;
+        }
+        if !column_exists("notes", "is_pinned") {
+            self.conn.execute("ALTER TABLE notes ADD COLUMN is_pinned INTEGER DEFAULT 0", [])?;
+        }
+        if !column_exists("notes", "is_favorite") {
+            self.conn.execute("ALTER TABLE notes ADD COLUMN is_favorite INTEGER DEFAULT 0", [])?;
+        }
+        if !column_exists("notes", "word_count") {
+            self.conn.execute("ALTER TABLE notes ADD COLUMN word_count INTEGER DEFAULT 0", [])?;
+        }
+        if !column_exists("notes", "metadata") {
+            self.conn.execute("ALTER TABLE notes ADD COLUMN metadata TEXT", [])?;
+        }
+
+        // Note versions table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS note_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                version_number INTEGER NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_by TEXT DEFAULT 'user',
+                change_summary TEXT,
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
+        // Note links table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS note_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_note_id INTEGER NOT NULL,
+                target_note_id INTEGER NOT NULL,
+                link_type TEXT DEFAULT 'reference',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (source_note_id) REFERENCES notes(id) ON DELETE CASCADE,
+                FOREIGN KEY (target_note_id) REFERENCES notes(id) ON DELETE CASCADE,
+                UNIQUE(source_note_id, target_note_id)
+            )",
+            [],
+        )?;
+
+        // Templates table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                title_template TEXT NOT NULL,
+                content_template TEXT NOT NULL,
+                category TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
+        // Attachments table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS attachments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                filepath TEXT NOT NULL,
+                file_size INTEGER NOT NULL,
+                mime_type TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
+        // Collections table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS collections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                query_rules TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
+        // Activity log table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS activity_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action_type TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                details TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
+        // Preferences table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS preferences (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
+        // Create indexes
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_notebook ON notes(notebook_id)", [])?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_status ON notes(status)", [])?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_pinned ON notes(is_pinned)", [])?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_note_versions_note_id ON note_versions(note_id)", [])?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_note_links_source ON note_links(source_note_id)", [])?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_note_links_target ON note_links(target_note_id)", [])?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_note ON attachments(note_id)", [])?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_activity_log_entity ON activity_log(entity_type, entity_id)", [])?;
+
+        Ok(())
+    }
+
+    // Notebook operations
+    pub fn create_notebook(&self, name: &str, description: Option<&str>, parent_id: Option<i64>, color: Option<&str>) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO notebooks (name, description, parent_id, color, created_at, updated_at) 
+             VALUES (?1, ?2, ?3, ?4, datetime('now'), datetime('now'))",
+            params![name, description, parent_id, color],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn get_notebook(&self, id: i64) -> Result<Notebook> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, description, parent_id, color, created_at, updated_at FROM notebooks WHERE id = ?1"
+        )?;
+        stmt.query_row(params![id], |row| {
+            Ok(Notebook {
+                id: Some(row.get(0)?),
+                name: row.get(1)?,
+                description: row.get(2)?,
+                parent_id: row.get(3)?,
+                color: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })
+    }
+
+    pub fn list_notebooks(&self) -> Result<Vec<Notebook>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, description, parent_id, color, created_at, updated_at FROM notebooks ORDER BY name"
+        )?;
+        let notebooks = stmt.query_map([], |row| {
+            Ok(Notebook {
+                id: Some(row.get(0)?),
+                name: row.get(1)?,
+                description: row.get(2)?,
+                parent_id: row.get(3)?,
+                color: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })?;
+        notebooks.collect()
+    }
+
+    pub fn update_notebook(&self, id: i64, name: &str, description: Option<&str>, color: Option<&str>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE notebooks SET name = ?1, description = ?2, color = ?3, updated_at = datetime('now') WHERE id = ?4",
+            params![name, description, color, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_notebook(&self, id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM notebooks WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // Get vault statistics
+    pub fn get_vault_stats(&self) -> Result<VaultStats> {
+        let total_notes: i64 = self.conn.query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))?;
+        let total_notebooks: i64 = self.conn.query_row("SELECT COUNT(*) FROM notebooks", [], |row| row.get(0))?;
+        let total_tags: i64 = self.conn.query_row("SELECT COUNT(*) FROM tags", [], |row| row.get(0))?;
+        let total_versions: i64 = self.conn.query_row("SELECT COUNT(*) FROM note_versions", [], |row| row.get(0))?;
+        let total_attachments: i64 = self.conn.query_row("SELECT COUNT(*) FROM attachments", [], |row| row.get(0))?;
+        
+        // Calculate database file size
+        let db_path = Self::get_db_path();
+        let vault_size_bytes = std::fs::metadata(db_path).map(|m| m.len() as i64).unwrap_or(0);
+
+        Ok(VaultStats {
+            total_notes,
+            total_notebooks,
+            total_tags,
+            total_versions,
+            total_attachments,
+            vault_size_bytes,
+        })
+    }
+
+    // Create a new version when updating a note
+    pub fn create_note_version(&self, note_id: i64, title: &str, content: &str, version_number: i32, change_summary: Option<&str>) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO note_versions (note_id, title, content, version_number, created_at, change_summary) 
+             VALUES (?1, ?2, ?3, ?4, datetime('now'), ?5)",
+            params![note_id, title, content, version_number, change_summary],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn get_note_versions(&self, note_id: i64) -> Result<Vec<NoteVersion>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, note_id, title, content, version_number, created_at, created_by, change_summary 
+             FROM note_versions WHERE note_id = ?1 ORDER BY version_number DESC"
+        )?;
+        let versions = stmt.query_map(params![note_id], |row| {
+            Ok(NoteVersion {
+                id: Some(row.get(0)?),
+                note_id: row.get(1)?,
+                title: row.get(2)?,
+                content: row.get(3)?,
+                version_number: row.get(4)?,
+                created_at: row.get(5)?,
+                created_by: row.get(6)?,
+                change_summary: row.get(7)?,
+            })
+        })?;
+        versions.collect()
+    }
+
+    // Create note link (bidirectional)
+    pub fn create_note_link(&self, source_id: i64, target_id: i64, link_type: Option<&str>) -> Result<i64> {
+        let link_type = link_type.unwrap_or("reference");
+        self.conn.execute(
+            "INSERT INTO note_links (source_note_id, target_note_id, link_type, created_at) 
+             VALUES (?1, ?2, ?3, datetime('now'))",
+            params![source_id, target_id, link_type],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn get_linked_notes(&self, note_id: i64) -> Result<Vec<Note>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT n.id, n.title, n.content, n.created_at, n.updated_at 
+             FROM notes n
+             INNER JOIN note_links l ON (l.source_note_id = ?1 AND l.target_note_id = n.id) 
+                                     OR (l.target_note_id = ?1 AND l.source_note_id = n.id)
+             ORDER BY n.updated_at DESC"
+        )?;
+        let notes = stmt.query_map(params![note_id], |row| {
+            Ok(Note {
+                id: Some(row.get(0)?),
+                title: row.get(1)?,
+                content: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        notes.collect()
     }
 }
