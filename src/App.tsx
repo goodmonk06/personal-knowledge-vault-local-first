@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
-import { NoteWithTags, CreateNoteRequest, UpdateNoteRequest } from "./types";
+import { NoteWithTags, CreateNoteRequest, UpdateNoteRequest, Template } from "./types";
+import { getAllNotes, searchNotes, createNote, updateNote, deleteNote, exportArchive } from "./api";
+import NotebookSidebar from "./components/NotebookSidebar";
+import TemplateSelector from "./components/TemplateSelector";
+import NoteLinkPanel from "./components/NoteLinkPanel";
 import "./App.css";
 
 function App() {
@@ -10,15 +13,22 @@ function App() {
   const [isEditing, setIsEditing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Phase 3: New state
+  const [selectedNotebookId, setSelectedNotebookId] = useState<string | null>(null);
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+
   // 編集フォームの状態
   const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
   const [editTags, setEditTags] = useState("");
+  const [editColor, setEditColor] = useState<string>("");
+  const [editIsPinned, setEditIsPinned] = useState(false);
 
   // 全ノートを読み込む
   const loadNotes = async () => {
     try {
-      const result = await invoke<NoteWithTags[]>("get_all_notes");
+      const result = await getAllNotes();
       setNotes(result);
     } catch (error) {
       console.error("Failed to load notes:", error);
@@ -34,9 +44,7 @@ function App() {
     }
 
     try {
-      const result = await invoke<NoteWithTags[]>("search_notes", {
-        query: searchQuery,
-      });
+      const result = await searchNotes(searchQuery);
       setNotes(result);
     } catch (error) {
       console.error("Failed to search notes:", error);
@@ -56,12 +64,17 @@ function App() {
         title: editTitle,
         content: editContent,
         tags: editTags.split(",").map((t) => t.trim()).filter((t) => t),
+        notebook_id: selectedNotebookId,
+        template_id: selectedTemplate?.id || null,
+        color: editColor || null,
       };
 
-      await invoke("create_note", { request });
+      await createNote(request);
       setEditTitle("");
       setEditContent("");
       setEditTags("");
+      setEditColor("");
+      setSelectedTemplate(null);
       setIsEditing(false);
       loadNotes();
     } catch (error) {
@@ -80,9 +93,12 @@ function App() {
         title: editTitle,
         content: editContent,
         tags: editTags.split(",").map((t) => t.trim()).filter((t) => t),
+        notebook_id: selectedNotebookId,
+        is_pinned: editIsPinned,
+        color: editColor || null,
       };
 
-      await invoke("update_note", { request });
+      await updateNote(request);
       setIsEditing(false);
       loadNotes();
     } catch (error) {
@@ -96,7 +112,7 @@ function App() {
     if (!selectedNote || !confirm("本当に削除しますか？")) return;
 
     try {
-      await invoke("delete_note", { noteId: selectedNote.id });
+      await deleteNote(selectedNote.id);
       setSelectedNote(null);
       loadNotes();
     } catch (error) {
@@ -117,7 +133,7 @@ function App() {
 
       if (!filePath) return;
 
-      await invoke("export_archive", { outputPath: filePath, password });
+      await exportArchive(filePath, password);
       alert("エクスポートが完了しました");
     } catch (error) {
       console.error("Failed to export:", error);
@@ -131,6 +147,8 @@ function App() {
     setEditTitle(note.title);
     setEditContent(note.content);
     setEditTags(note.tags.join(", "));
+    setEditColor(note.color || "");
+    setEditIsPinned(note.is_pinned);
     setIsEditing(false);
   };
 
@@ -140,12 +158,43 @@ function App() {
     setEditTitle("");
     setEditContent("");
     setEditTags("");
+    setEditColor("");
+    setEditIsPinned(false);
+    setSelectedTemplate(null);
     setIsEditing(true);
+  };
+
+  // テンプレートを適用
+  const applyTemplate = (template: Template) => {
+    setSelectedTemplate(template);
+    setEditContent(template.content);
+    setEditTags(template.default_tags.join(", "));
+  };
+
+  // フィルタされたノート一覧を取得
+  const getFilteredNotes = () => {
+    if (selectedNotebookId === null) {
+      return notes;
+    }
+    return notes.filter((note) => note.notebook_id === selectedNotebookId);
+  };
+
+  // ノートブック変更時にフィルタをリセット
+  const handleNotebookSelect = (notebookId: string | null) => {
+    setSelectedNotebookId(notebookId);
+    setSelectedNote(null);
+  };
+
+  // リンクが変更されたら再読み込み
+  const handleLinksChanged = () => {
+    loadNotes();
   };
 
   useEffect(() => {
     loadNotes();
   }, []);
+
+  const filteredNotes = getFilteredNotes();
 
   return (
     <div className="container">
@@ -165,17 +214,26 @@ function App() {
       </header>
 
       <div className="main-content">
+        <NotebookSidebar
+          selectedNotebookId={selectedNotebookId}
+          onNotebookSelect={handleNotebookSelect}
+        />
+
         <aside className="sidebar">
           <button onClick={startCreate} className="new-note-btn">
             + 新規ノート
           </button>
           <div className="note-list">
-            {notes.map((note) => (
+            {filteredNotes.map((note) => (
               <div
                 key={note.id}
                 className={`note-item ${selectedNote?.id === note.id ? "active" : ""}`}
                 onClick={() => selectNote(note)}
+                style={{
+                  borderLeft: note.color ? `4px solid ${note.color}` : undefined,
+                }}
               >
+                {note.is_pinned && <span className="pin-badge">📌</span>}
                 <h3>{note.title}</h3>
                 <p className="note-preview">
                   {note.content.substring(0, 50)}
@@ -225,13 +283,28 @@ function App() {
 
               {isEditing ? (
                 <div className="edit-form">
-                  <input
-                    type="text"
-                    placeholder="タイトル"
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    className="title-input"
-                  />
+                  <div className="form-row">
+                    <input
+                      type="text"
+                      placeholder="タイトル"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      className="title-input"
+                    />
+                    {!selectedNote && (
+                      <button
+                        className="btn-template"
+                        onClick={() => setShowTemplateSelector(true)}
+                      >
+                        📄 テンプレート
+                      </button>
+                    )}
+                  </div>
+                  {selectedTemplate && (
+                    <div className="template-badge">
+                      使用中のテンプレート: {selectedTemplate.name}
+                    </div>
+                  )}
                   <textarea
                     placeholder="内容"
                     value={editContent}
@@ -245,6 +318,25 @@ function App() {
                     onChange={(e) => setEditTags(e.target.value)}
                     className="tags-input"
                   />
+                  <div className="form-row">
+                    <input
+                      type="color"
+                      value={editColor || "#6366f1"}
+                      onChange={(e) => setEditColor(e.target.value)}
+                      className="color-input"
+                      title="ノートの色"
+                    />
+                    {selectedNote && (
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={editIsPinned}
+                          onChange={(e) => setEditIsPinned(e.target.checked)}
+                        />
+                        ピン留め
+                      </label>
+                    )}
+                  </div>
                 </div>
               ) : (
                 selectedNote && (
@@ -277,7 +369,24 @@ function App() {
             </div>
           )}
         </main>
+
+        <NoteLinkPanel
+          currentNoteId={selectedNote?.id || null}
+          allNotes={notes}
+          onNavigateToNote={(noteId) => {
+            const note = notes.find((n) => n.id === noteId);
+            if (note) selectNote(note);
+          }}
+          onLinksChanged={handleLinksChanged}
+        />
       </div>
+
+      <TemplateSelector
+        isOpen={showTemplateSelector}
+        onClose={() => setShowTemplateSelector(false)}
+        onSelect={applyTemplate}
+        allowManagement={true}
+      />
     </div>
   );
 }

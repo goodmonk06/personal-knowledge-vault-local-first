@@ -7,6 +7,18 @@
   color: #0f0f0f;
   background-color: #f6f6f6;
 
+  /* CSS Variables for theming */
+  --color-primary: #6366f1;
+  --color-primary-hover: #4f46e5;
+  --color-primary-light: #818cf8;
+  --color-primary-alpha: rgba(99, 102, 241, 0.2);
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #fafafa;
+  --color-bg-tertiary: #f6f6f6;
+  --color-text: #0f0f0f;
+  --color-text-muted: #666666;
+  --color-border: #e0e0e0;
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -99,6 +111,7 @@ header h1 {
   cursor: pointer;
   border: 1px solid #e0e0e0;
   transition: all 0.2s;
+  position: relative;
 }
 
 .note-item:hover {
@@ -251,10 +264,76 @@ textarea:focus {
   border-color: #396cd8;
 }
 
+/* Phase 3: New styles */
+
+.pin-badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  font-size: 1rem;
+}
+
+.form-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.btn-template {
+  white-space: nowrap;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+}
+
+.template-badge {
+  padding: 0.5rem 0.75rem;
+  background-color: var(--color-primary-alpha);
+  color: var(--color-primary);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.color-input {
+  width: 60px;
+  height: 40px;
+  padding: 0.25rem;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: auto;
+  height: auto;
+  cursor: pointer;
+  box-shadow: none;
+  padding: 0;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
     background-color: #1a1a1a;
+
+    /* Dark mode color variables */
+    --color-primary: #6366f1;
+    --color-primary-hover: #4f46e5;
+    --color-primary-light: #818cf8;
+    --color-primary-alpha: rgba(99, 102, 241, 0.2);
+    --color-bg-primary: #16161e;
+    --color-bg-secondary: #1a1b26;
+    --color-bg-tertiary: #16161e;
+    --color-text: #c0caf5;
+    --color-text-muted: #7982a9;
+    --color-border: #2d2e3a;
   }
 
   header {
