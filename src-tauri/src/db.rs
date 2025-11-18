@@ -1,4 +1,8 @@
-use crate::models::{Note, NoteWithTags, Tag};
+use crate::migrations;
+use crate::models::{
+    Note, NoteLink, NoteLinkInfo, Notebook, NotebookWithCount, NoteWithLinks, NoteWithTags, Tag,
+    Template,
+};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
@@ -27,51 +31,7 @@ impl Database {
     /// スキーマを初期化
     fn initialize_schema(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-
-        // ノートテーブル
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS notes (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )",
-            [],
-        )?;
-
-        // タグテーブル
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS tags (
-                id TEXT PRIMARY KEY,
-                name TEXT UNIQUE NOT NULL
-            )",
-            [],
-        )?;
-
-        // ノート-タグ関連テーブル
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS note_tags (
-                note_id TEXT NOT NULL,
-                tag_id TEXT NOT NULL,
-                PRIMARY KEY (note_id, tag_id),
-                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE,
-                FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-            )",
-            [],
-        )?;
-
-        // 全文検索用インデックス
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_notes_title ON notes(title)",
-            [],
-        )?;
-
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name)",
-            [],
-        )?;
-
+        migrations::run_migrations(&conn)?;
         Ok(())
     }
 
@@ -80,11 +40,17 @@ impl Database {
         let conn = self.conn.lock().unwrap();
 
         conn.execute(
-            "INSERT INTO notes (id, title, content, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO notes (id, title, content, notebook_id, template_id, is_pinned, color, metadata, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 &note.id,
                 &note.title,
                 &note.content,
+                &note.notebook_id,
+                &note.template_id,
+                note.is_pinned as i32,
+                &note.color,
+                &note.metadata,
                 note.created_at.to_rfc3339(),
                 note.updated_at.to_rfc3339(),
             ],
@@ -107,10 +73,13 @@ impl Database {
         let conn = self.conn.lock().unwrap();
 
         conn.execute(
-            "UPDATE notes SET title = ?1, content = ?2, updated_at = ?3 WHERE id = ?4",
+            "UPDATE notes SET title = ?1, content = ?2, notebook_id = ?3, is_pinned = ?4, color = ?5, updated_at = ?6 WHERE id = ?7",
             params![
                 &note.title,
                 &note.content,
+                &note.notebook_id,
+                note.is_pinned as i32,
+                &note.color,
                 note.updated_at.to_rfc3339(),
                 &note.id,
             ],
@@ -145,7 +114,8 @@ impl Database {
     pub fn get_all_notes(&self) -> Result<Vec<NoteWithTags>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, title, content, created_at, updated_at FROM notes ORDER BY updated_at DESC"
+            "SELECT id, title, content, notebook_id, template_id, is_pinned, color, metadata, created_at, updated_at
+             FROM notes ORDER BY updated_at DESC"
         )?;
 
         let notes = stmt.query_map([], |row| {
@@ -153,8 +123,13 @@ impl Database {
                 id: row.get(0)?,
                 title: row.get(1)?,
                 content: row.get(2)?,
-                created_at: row.get::<_, String>(3)?.parse::<DateTime<Utc>>().unwrap(),
-                updated_at: row.get::<_, String>(4)?.parse::<DateTime<Utc>>().unwrap(),
+                notebook_id: row.get(3)?,
+                template_id: row.get(4)?,
+                is_pinned: row.get::<_, i32>(5)? != 0,
+                color: row.get(6)?,
+                metadata: row.get(7)?,
+                created_at: row.get::<_, String>(8)?.parse::<DateTime<Utc>>().unwrap(),
+                updated_at: row.get::<_, String>(9)?.parse::<DateTime<Utc>>().unwrap(),
             })
         })?;
 
@@ -174,9 +149,8 @@ impl Database {
         let search_pattern = format!("%{}%", query);
 
         let mut stmt = conn.prepare(
-            "SELECT id, title, content, created_at, updated_at FROM notes
-             WHERE title LIKE ?1 OR content LIKE ?1
-             ORDER BY updated_at DESC"
+            "SELECT id, title, content, notebook_id, template_id, is_pinned, color, metadata, created_at, updated_at
+             FROM notes WHERE title LIKE ?1 OR content LIKE ?1 ORDER BY updated_at DESC"
         )?;
 
         let notes = stmt.query_map(params![search_pattern], |row| {
@@ -184,8 +158,13 @@ impl Database {
                 id: row.get(0)?,
                 title: row.get(1)?,
                 content: row.get(2)?,
-                created_at: row.get::<_, String>(3)?.parse::<DateTime<Utc>>().unwrap(),
-                updated_at: row.get::<_, String>(4)?.parse::<DateTime<Utc>>().unwrap(),
+                notebook_id: row.get(3)?,
+                template_id: row.get(4)?,
+                is_pinned: row.get::<_, i32>(5)? != 0,
+                color: row.get(6)?,
+                metadata: row.get(7)?,
+                created_at: row.get::<_, String>(8)?.parse::<DateTime<Utc>>().unwrap(),
+                updated_at: row.get::<_, String>(9)?.parse::<DateTime<Utc>>().unwrap(),
             })
         })?;
 
@@ -241,6 +220,293 @@ impl Database {
             .collect::<Result<Vec<String>, _>>()?;
 
         Ok(tags)
+    }
+
+    // ==================== Notebook Operations ====================
+
+    /// ノートブックを作成
+    pub fn create_notebook(&self, notebook: &Notebook) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO notebooks (id, name, description, icon, color, parent_id, is_archived, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                &notebook.id,
+                &notebook.name,
+                &notebook.description,
+                &notebook.icon,
+                &notebook.color,
+                &notebook.parent_id,
+                notebook.is_archived as i32,
+                notebook.created_at.to_rfc3339(),
+                notebook.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// ノートブックを更新
+    pub fn update_notebook(&self, notebook: &Notebook) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE notebooks SET name = ?1, description = ?2, icon = ?3, color = ?4, is_archived = ?5, updated_at = ?6
+             WHERE id = ?7",
+            params![
+                &notebook.name,
+                &notebook.description,
+                &notebook.icon,
+                &notebook.color,
+                notebook.is_archived as i32,
+                notebook.updated_at.to_rfc3339(),
+                &notebook.id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// ノートブックを削除
+    pub fn delete_notebook(&self, notebook_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM notebooks WHERE id = ?1", params![notebook_id])?;
+        Ok(())
+    }
+
+    /// 全ノートブックを取得
+    pub fn get_all_notebooks(&self) -> Result<Vec<NotebookWithCount>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT n.id, n.name, n.description, n.icon, n.color, n.parent_id, n.is_archived, n.created_at, n.updated_at,
+                    COALESCE(COUNT(notes.id), 0) as note_count
+             FROM notebooks n
+             LEFT JOIN notes ON notes.notebook_id = n.id
+             GROUP BY n.id
+             ORDER BY n.name"
+        )?;
+
+        let notebooks = stmt.query_map([], |row| {
+            Ok(NotebookWithCount {
+                notebook: Notebook {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    icon: row.get(3)?,
+                    color: row.get(4)?,
+                    parent_id: row.get(5)?,
+                    is_archived: row.get::<_, i32>(6)? != 0,
+                    created_at: row.get::<_, String>(7)?.parse::<DateTime<Utc>>().unwrap(),
+                    updated_at: row.get::<_, String>(8)?.parse::<DateTime<Utc>>().unwrap(),
+                },
+                note_count: row.get(9)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(notebooks)
+    }
+
+    // ==================== Template Operations ====================
+
+    /// テンプレートを作成
+    pub fn create_template(&self, template: &Template, default_tags: &[String]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO templates (id, name, description, content, icon, is_system, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                &template.id,
+                &template.name,
+                &template.description,
+                &template.content,
+                &template.icon,
+                template.is_system as i32,
+                template.created_at.to_rfc3339(),
+                template.updated_at.to_rfc3339(),
+            ],
+        )?;
+
+        // デフォルトタグを保存
+        for tag_name in default_tags {
+            conn.execute(
+                "INSERT INTO template_default_tags (template_id, tag_name) VALUES (?1, ?2)",
+                params![&template.id, tag_name],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// テンプレートを更新
+    pub fn update_template(&self, template: &Template, default_tags: &[String]) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE templates SET name = ?1, description = ?2, content = ?3, icon = ?4, updated_at = ?5
+             WHERE id = ?6",
+            params![
+                &template.name,
+                &template.description,
+                &template.content,
+                &template.icon,
+                template.updated_at.to_rfc3339(),
+                &template.id,
+            ],
+        )?;
+
+        // デフォルトタグを更新
+        conn.execute(
+            "DELETE FROM template_default_tags WHERE template_id = ?1",
+            params![&template.id],
+        )?;
+
+        for tag_name in default_tags {
+            conn.execute(
+                "INSERT INTO template_default_tags (template_id, tag_name) VALUES (?1, ?2)",
+                params![&template.id, tag_name],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// テンプレートを削除
+    pub fn delete_template(&self, template_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM templates WHERE id = ?1", params![template_id])?;
+        Ok(())
+    }
+
+    /// 全テンプレートを取得
+    pub fn get_all_templates(&self) -> Result<Vec<Template>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, description, content, icon, is_system, created_at, updated_at
+             FROM templates ORDER BY name"
+        )?;
+
+        let templates = stmt.query_map([], |row| {
+            let template_id: String = row.get(0)?;
+            let default_tags = self.get_template_default_tags_internal(&conn, &template_id)?;
+
+            Ok(Template {
+                id: template_id,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                content: row.get(3)?,
+                default_tags,
+                icon: row.get(4)?,
+                is_system: row.get::<_, i32>(5)? != 0,
+                created_at: row.get::<_, String>(6)?.parse::<DateTime<Utc>>().unwrap(),
+                updated_at: row.get::<_, String>(7)?.parse::<DateTime<Utc>>().unwrap(),
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(templates)
+    }
+
+    /// テンプレートのデフォルトタグを取得（内部メソッド）
+    fn get_template_default_tags_internal(&self, conn: &Connection, template_id: &str) -> Result<Vec<String>> {
+        let mut stmt = conn.prepare(
+            "SELECT tag_name FROM template_default_tags WHERE template_id = ?1"
+        )?;
+
+        let tags = stmt.query_map(params![template_id], |row| row.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+
+        Ok(tags)
+    }
+
+    // ==================== Note Link Operations ====================
+
+    /// ノートリンクを作成
+    pub fn create_note_link(&self, link: &NoteLink) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO note_links (id, source_note_id, target_note_id, link_type, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                &link.id,
+                &link.source_note_id,
+                &link.target_note_id,
+                &link.link_type,
+                link.created_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// ノートリンクを削除
+    pub fn delete_note_link(&self, link_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM note_links WHERE id = ?1", params![link_id])?;
+        Ok(())
+    }
+
+    /// ノートのリンクを取得
+    pub fn get_note_links(&self, note_id: &str) -> Result<NoteWithLinks> {
+        let conn = self.conn.lock().unwrap();
+
+        // ノート本体を取得
+        let note: Note = conn.query_row(
+            "SELECT id, title, content, notebook_id, template_id, is_pinned, color, metadata, created_at, updated_at
+             FROM notes WHERE id = ?1",
+            params![note_id],
+            |row| Ok(Note {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                content: row.get(2)?,
+                notebook_id: row.get(3)?,
+                template_id: row.get(4)?,
+                is_pinned: row.get::<_, i32>(5)? != 0,
+                color: row.get(6)?,
+                metadata: row.get(7)?,
+                created_at: row.get::<_, String>(8)?.parse::<DateTime<Utc>>().unwrap(),
+                updated_at: row.get::<_, String>(9)?.parse::<DateTime<Utc>>().unwrap(),
+            })
+        )?;
+
+        // タグを取得
+        let tags = self.get_note_tags_internal(&conn, note_id)?;
+
+        // 前方リンク（このノートから他のノートへのリンク）
+        let mut stmt = conn.prepare(
+            "SELECT n.id, n.title, l.link_type
+             FROM note_links l
+             INNER JOIN notes n ON l.target_note_id = n.id
+             WHERE l.source_note_id = ?1"
+        )?;
+
+        let forward_links = stmt.query_map(params![note_id], |row| {
+            Ok(NoteLinkInfo {
+                note_id: row.get(0)?,
+                note_title: row.get(1)?,
+                link_type: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+        // バックリンク（他のノートからこのノートへのリンク）
+        let mut stmt = conn.prepare(
+            "SELECT n.id, n.title, l.link_type
+             FROM note_links l
+             INNER JOIN notes n ON l.source_note_id = n.id
+             WHERE l.target_note_id = ?1"
+        )?;
+
+        let backlinks = stmt.query_map(params![note_id], |row| {
+            Ok(NoteLinkInfo {
+                note_id: row.get(0)?,
+                note_title: row.get(1)?,
+                link_type: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(NoteWithLinks {
+            note,
+            tags,
+            forward_links,
+            backlinks,
+        })
     }
 }
 
