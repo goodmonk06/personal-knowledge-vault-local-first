@@ -1,13 +1,25 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Note, Tag } from './types';
+import {
+  CreateNoteSchema,
+  UpdateNoteSchema,
+  InitializeDbSchema,
+  SearchQuerySchema,
+  ExportSchema,
+} from './schemas';
 
 export const api = {
   async initializeDb(password: string): Promise<string> {
-    return await invoke('initialize_db', { password });
+    const validated = InitializeDbSchema.parse({ password });
+    return await invoke('initialize_db', { password: validated.password });
   },
 
   async createNote(title: string, content: string): Promise<number> {
-    return await invoke('create_note', { title, content });
+    const validated = CreateNoteSchema.parse({ title, content });
+    return await invoke('create_note', {
+      title: validated.title,
+      content: validated.content,
+    });
   },
 
   async getNote(id: number): Promise<Note> {
@@ -15,7 +27,12 @@ export const api = {
   },
 
   async updateNote(id: number, title: string, content: string): Promise<void> {
-    return await invoke('update_note', { id, title, content });
+    const validated = UpdateNoteSchema.parse({ id, title, content });
+    return await invoke('update_note', {
+      id: validated.id,
+      title: validated.title,
+      content: validated.content,
+    });
   },
 
   async deleteNote(id: number): Promise<void> {
@@ -27,7 +44,8 @@ export const api = {
   },
 
   async searchNotes(query: string): Promise<Note[]> {
-    return await invoke('search_notes', { query });
+    const validated = SearchQuerySchema.parse({ query });
+    return await invoke('search_notes', { query: validated.query });
   },
 
   async addTagToNote(noteId: number, tagName: string): Promise<void> {
@@ -43,6 +61,10 @@ export const api = {
   },
 
   async exportEncryptedArchive(password: string, outputPath: string): Promise<string> {
-    return await invoke('export_encrypted_archive', { password, outputPath });
+    const validated = ExportSchema.parse({ password, outputPath });
+    return await invoke('export_encrypted_archive', {
+      password: validated.password,
+      outputPath: validated.outputPath,
+    });
   },
 };

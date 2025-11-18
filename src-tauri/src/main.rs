@@ -44,6 +44,7 @@ fn main() {
             commands::remove_tag_from_note,
             commands::get_all_tags,
             commands::export_encrypted_archive,
+            commands::seed_database,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

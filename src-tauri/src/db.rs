@@ -253,3 +253,123 @@ impl Database {
         tags.collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn create_test_db() -> Database {
+        // Use in-memory database for tests
+        let conn = Connection::open_in_memory().unwrap();
+        let db = Database { conn };
+        db.initialize_schema().unwrap();
+        db
+    }
+
+    #[test]
+    fn test_create_and_get_note() {
+        let db = create_test_db();
+        
+        let id = db.create_note("Test Note", "Test Content").unwrap();
+        assert!(id > 0);
+
+        let note = db.get_note(id).unwrap();
+        assert_eq!(note.title, "Test Note");
+        assert_eq!(note.content, "Test Content");
+        assert_eq!(note.id, Some(id));
+    }
+
+    #[test]
+    fn test_update_note() {
+        let db = create_test_db();
+        
+        let id = db.create_note("Original", "Original Content").unwrap();
+        db.update_note(id, "Updated", "Updated Content").unwrap();
+
+        let note = db.get_note(id).unwrap();
+        assert_eq!(note.title, "Updated");
+        assert_eq!(note.content, "Updated Content");
+    }
+
+    #[test]
+    fn test_delete_note() {
+        let db = create_test_db();
+        
+        let id = db.create_note("To Delete", "Content").unwrap();
+        db.delete_note(id).unwrap();
+
+        let result = db.get_note(id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_list_notes() {
+        let db = create_test_db();
+        
+        db.create_note("Note 1", "Content 1").unwrap();
+        db.create_note("Note 2", "Content 2").unwrap();
+        db.create_note("Note 3", "Content 3").unwrap();
+
+        let notes = db.list_notes().unwrap();
+        assert_eq!(notes.len(), 3);
+    }
+
+    #[test]
+    fn test_search_notes() {
+        let db = create_test_db();
+        
+        db.create_note("Meeting Notes", "Discussed project timeline").unwrap();
+        db.create_note("Shopping List", "Buy groceries").unwrap();
+        db.create_note("Project Ideas", "Brainstormed new features").unwrap();
+
+        let results = db.search_notes("project").unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_tags() {
+        let db = create_test_db();
+        
+        let note_id = db.create_note("Tagged Note", "Content").unwrap();
+        
+        db.add_tag_to_note(note_id, "important").unwrap();
+        db.add_tag_to_note(note_id, "work").unwrap();
+
+        let tags = db.get_tags_for_note(note_id).unwrap();
+        assert_eq!(tags.len(), 2);
+
+        db.remove_tag_from_note(note_id, "work").unwrap();
+        let tags = db.get_tags_for_note(note_id).unwrap();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].name, "important");
+    }
+
+    #[test]
+    fn test_get_all_tags() {
+        let db = create_test_db();
+        
+        let note1 = db.create_note("Note 1", "Content").unwrap();
+        let note2 = db.create_note("Note 2", "Content").unwrap();
+
+        db.add_tag_to_note(note1, "important").unwrap();
+        db.add_tag_to_note(note2, "work").unwrap();
+        db.add_tag_to_note(note1, "personal").unwrap();
+
+        let tags = db.get_all_tags().unwrap();
+        assert_eq!(tags.len(), 3);
+    }
+
+    #[test]
+    fn test_duplicate_tag() {
+        let db = create_test_db();
+        
+        let note_id = db.create_note("Note", "Content").unwrap();
+        
+        db.add_tag_to_note(note_id, "duplicate").unwrap();
+        db.add_tag_to_note(note_id, "duplicate").unwrap();
+
+        let tags = db.get_tags_for_note(note_id).unwrap();
+        assert_eq!(tags.len(), 1);
+    }
+}

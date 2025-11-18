@@ -169,3 +169,121 @@ pub async fn export_encrypted_archive(
         None => Err("Database not initialized".to_string()),
     }
 }
+
+#[tauri::command]
+pub fn seed_database(state: State<AppState>) -> Result<String, String> {
+    let db_lock = state.db.lock().unwrap();
+
+    match &*db_lock {
+        Some(db) => {
+            // Check if database already has notes
+            let existing_notes = db
+                .list_notes()
+                .map_err(|e| format!("Failed to check existing notes: {}", e))?;
+
+            if !existing_notes.is_empty() {
+                return Ok("Database already contains notes. Skipping seed.".to_string());
+            }
+
+            // Create welcome note
+            let welcome_id = db
+                .create_note(
+                    "Welcome to Personal Knowledge Vault",
+                    r#"This is your personal, local-first knowledge management system.
+
+## Features
+
+- **Create Notes**: Click "+ 新しいノート" to create a new note
+- **Tag Notes**: Organize your notes with tags for easy categorization
+- **Search**: Use the search box to find notes by title or content
+- **Export**: Create encrypted backups to external storage
+
+## Getting Started
+
+1. Create your first note by clicking the button in the sidebar
+2. Add tags to organize your notes
+3. Use the search feature to quickly find information
+4. Export your data regularly for backup
+
+This app stores all data locally on your device. No cloud services are involved, giving you complete control over your information."#,
+                )
+                .map_err(|e| format!("Failed to create welcome note: {}", e))?;
+
+            db.add_tag_to_note(welcome_id, "important")
+                .map_err(|e| format!("Failed to add tag: {}", e))?;
+
+            // Create example notes
+            let example1_id = db
+                .create_note(
+                    "Project Ideas",
+                    r#"## New Feature Ideas
+
+- Markdown editor support
+- File attachments
+- Multiple vaults
+- Mobile companion app
+- Cloud sync (optional)
+
+Remember to keep notes concise and well-organized with tags!"#,
+                )
+                .map_err(|e| format!("Failed to create example note 1: {}", e))?;
+
+            db.add_tag_to_note(example1_id, "ideas")
+                .map_err(|e| format!("Failed to add tag: {}", e))?;
+            db.add_tag_to_note(example1_id, "work")
+                .map_err(|e| format!("Failed to add tag: {}", e))?;
+
+            let example2_id = db
+                .create_note(
+                    "Meeting Notes Template",
+                    r#"## Meeting: [Topic]
+**Date**: [Date]
+**Attendees**: [Names]
+
+### Agenda
+1. 
+2. 
+3. 
+
+### Discussion Points
+- 
+
+### Action Items
+- [ ] 
+- [ ] 
+
+### Next Steps
+- "#,
+                )
+                .map_err(|e| format!("Failed to create example note 2: {}", e))?;
+
+            db.add_tag_to_note(example2_id, "work")
+                .map_err(|e| format!("Failed to add tag: {}", e))?;
+
+            let example3_id = db
+                .create_note(
+                    "Learning Resources",
+                    r#"## Topics to Study
+
+### Programming
+- Rust advanced patterns
+- React performance optimization
+- Database design
+
+### Personal Development
+- Time management techniques
+- Note-taking systems
+- Knowledge organization
+
+Use tags to categorize learning materials by topic or priority."#,
+                )
+                .map_err(|e| format!("Failed to create example note 3: {}", e))?;
+
+            db.add_tag_to_note(example3_id, "personal")
+                .map_err(|e| format!("Failed to add tag: {}", e))?;
+
+            Ok("Successfully seeded database with 4 example notes and tags!".to_string())
+        }
+        None => Err("Database not initialized".to_string()),
+    }
+}

@@ -1,183 +1,309 @@
 # Personal Knowledge Vault - Local First
 
-ローカル端末優先で動く個人ナレッジボルト。クラウドに依存せず、外部ストレージに暗号化アーカイブを保存する構想の実験用アプリケーションです。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
+[![Rust](https://img.shields.io/badge/Rust-1.91-orange)](https://www.rust-lang.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-2.0-24C8DB)](https://tauri.app/)
 
-## コンセプト
+A privacy-first, local-only personal knowledge management system built with Tauri, React, and SQLite. Store your notes locally with encryption, no cloud required.
 
-このアプリケーションは、**完全にローカル優先**のアプローチで個人のナレッジを管理します：
+## 📋 Overview
 
-- **プライバシー第一**: データは全てローカルに保存され、クラウドサービスに送信されません
-- **暗号化**: データベースとエクスポートアーカイブは暗号化されます
-- **オフライン動作**: インターネット接続なしで完全に動作します
-- **ポータビリティ**: 暗号化アーカイブを外部ストレージに保存して、長期保管が可能
+Personal Knowledge Vault is a **local-first** desktop application for managing your personal notes and knowledge base. Unlike cloud-based solutions, all your data stays on your device, giving you complete control and privacy.
 
-## ユースケース
+### ✨ Key Features
 
-### 1. 外部クラウドを使わないナレッジ管理
+- **🔒 Privacy-First**: All data stored locally, never sent to cloud services
+- **🔐 Encryption**: AES-256-GCM encrypted archives for secure backups
+- **📝 Rich Note Management**: Create, edit, organize notes with tags
+- **🔍 Full-Text Search**: Quickly find notes by title or content
+- **💾 Portable Backups**: Export encrypted archives to external storage
+- **🌙 Modern UI**: Clean, dark-mode interface built with React
+- **⚡ Fast & Lightweight**: Built with Tauri for minimal resource usage
 
-多くのナレッジ管理ツール（Notion, Evernoteなど）はクラウドベースですが、このアプリは：
+### 🎯 Perfect For
 
-- データが企業のサーバーに保存されることはありません
-- インターネット接続が不要で、完全にオフラインで動作します
-- 自分のデバイスでデータを完全にコントロールできます
+- Developers keeping technical notes and code snippets
+- Researchers organizing study materials and references
+- Anyone wanting complete control over their personal data
+- Users preferring local-only storage over cloud services
 
-### 2. 外部ストレージへの暗号化バックアップ
+## 🛠 Tech Stack
 
-クラウドの代わりに、物理的な外部ストレージデバイスを使用：
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Framework** | Tauri 2.x | Lightweight, secure desktop app framework |
+| **Frontend** | React 18 + TypeScript | Modern, type-safe UI |
+| **Backend** | Rust | High-performance, safe systems programming |
+| **Database** | SQLite | Embedded, zero-config database |
+| **Encryption** | AES-256-GCM | Military-grade encryption for exports |
+| **Validation** | Zod | Runtime type validation |
+| **Testing** | Vitest + Cargo Test | Comprehensive test coverage |
+| **Build Tool** | Vite | Fast, modern build tooling |
+
+## 🏗 Domain Model
+
+### Core Entities
 
 ```
-1. アプリでノートを作成・編集
-   ↓
-2. 「暗号化アーカイブをエクスポート」機能でバックアップ作成
-   ↓
-3. USB メモリ、外付けHDD、NASなどにアーカイブを保存
-   ↓
-4. 必要に応じて別のデバイスでインポート（将来実装予定）
+Note
+├── id: number
+├── title: string
+├── content: string
+├── created_at: timestamp
+├── updated_at: timestamp
+└── tags: Tag[]
+
+Tag
+├── id: number
+└── name: string
+
+ExportArchive
+├── notes: Note[]
+├── encryption: AES-256-GCM
+└── password_protected: boolean
 ```
 
-### 3. 長期的なデータ保管
+### Key Relationships
 
-- **耐久性**: 物理メディアに保存することで、クラウドサービスの終了やアカウント削除のリスクを回避
-- **アクセス制御**: 自分だけがアクセスできる物理メディアで完全にコントロール
-- **暗号化**: 紛失や盗難時も、暗号化により内容は保護されます
+- Notes have many Tags (many-to-many)
+- Tags can be assigned to multiple Notes
+- Export Archives contain snapshots of all Notes at export time
 
-## 技術スタック
+## 🚀 Getting Started
 
-- **フレームワーク**: Tauri 2.x（軽量でセキュアなデスクトップアプリケーション）
-- **フロントエンド**: React + TypeScript + Vite
-- **データベース**: SQLite（ローカル暗号化対応）
-- **暗号化**: AES-256-GCM（アーカイブエクスポート用）
-- **言語**: Rust（バックエンド）、TypeScript（フロントエンド）
+### Prerequisites
 
-## 機能
+- **Node.js** 18+
+- **Rust** 1.70+
+- **npm** or **pnpm**
 
-- ✅ ノートの作成・編集・削除
-- ✅ タグ付けによる分類
-- ✅ 全文検索（簡易版）
-- ✅ パスワードによるデータベース保護
-- ✅ 暗号化アーカイブのエクスポート機能
-- 🔄 暗号化アーカイブのインポート機能（予定）
-- 🔄 クロスプラットフォーム対応（Windows, macOS, Linux）
-
-## セットアップ
-
-### 前提条件
-
-- Node.js 18以上
-- Rust 1.70以上
-- npm または yarn
-
-#### Linux追加依存関係
-
-Linuxでは、以下のシステムライブラリが必要です：
+#### Linux System Dependencies
 
 **Ubuntu/Debian:**
 ```bash
 sudo apt update
-sudo apt install libwebkit2gtk-4.1-dev \
-  build-essential \
-  curl \
-  wget \
-  file \
-  libxdo-dev \
-  libssl-dev \
-  libayatana-appindicator3-dev \
-  librsvg2-dev \
-  libgtk-3-dev
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget \
+  libssl-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev
 ```
 
 **Fedora:**
 ```bash
-sudo dnf install webkit2gtk4.1-devel \
-  openssl-devel \
-  curl \
-  wget \
-  file \
-  libappindicator-gtk3-devel \
-  librsvg2-devel
+sudo dnf install webkit2gtk4.1-devel openssl-devel curl wget \
+  file libappindicator-gtk3-devel librsvg2-devel
 ```
 
 **Arch:**
 ```bash
-sudo pacman -Syu
 sudo pacman -S webkit2gtk base-devel curl wget file openssl gtk3
 ```
 
-### インストール
+### Quick Start
 
 ```bash
-# リポジトリをクローン
+# 1. Clone the repository
 git clone https://github.com/yourusername/personal-knowledge-vault-local-first.git
 cd personal-knowledge-vault-local-first
 
-# 依存関係をインストール
+# 2. Install dependencies
 npm install
 
-# 開発モードで起動
-npm run tauri dev
+# 3. Start development server
+npm run dev
 
-# ビルド
-npm run tauri build
+# The app will launch automatically!
 ```
 
-### 初回起動
+### Available Scripts
 
-1. アプリを起動すると、パスワード入力画面が表示されます
-2. データベース暗号化用のパスワードを設定してください
-3. このパスワードは安全に保管してください（紛失すると復元できません）
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server with hot reload |
+| `npm run build` | Build production app |
+| `npm test` | Run all tests |
+| `npm run test:coverage` | Run tests with coverage report |
+| `npm run lint` | Lint code |
+| `npm run lint:fix` | Fix linting issues |
+| `npm run format` | Format code with Prettier |
+| `npm run type-check` | TypeScript type checking |
+| `npm run seed` | Show seed data information |
 
-## 使い方
+### First Launch
 
-### ノートの作成
+1. **Launch the app**: Run `npm run dev`
+2. **Set a password**: Enter a password (min. 8 characters) to protect your database
+3. **Get started**: The app will seed with example notes automatically
 
-1. 左サイドバーの「+ 新しいノート」をクリック
-2. タイトルと内容を入力
-3. 自動保存されます
+**Demo Credentials** (for testing):
+```
+Password: demo123456
+```
 
-### タグ付け
+⚠️ **Important**: Store your password securely. Without it, you cannot access your data.
 
-1. ノート編集画面下部の「タグ」セクションでタグを追加
-2. タグで分類・整理が可能です
+## 📘 Example Flow: Complete Note Lifecycle
 
-### 検索
+This example demonstrates the complete vertical slice from creation to export:
 
-1. サイドバー上部の検索ボックスに検索キーワードを入力
-2. タイトルと本文から該当するノートを検索します
+### 1. Create a Note
 
-### 暗号化アーカイブのエクスポート
+```typescript
+// Via UI: Click "+ 新しいノート" button
+// Internally calls:
+await api.createNote("My First Note", "This is the content");
+// Returns: note_id
+```
 
-1. サイドバーの「アーカイブをエクスポート」ボタンをクリック
-2. アーカイブを暗号化するパスワードを入力
-3. 生成されたファイルを外部ストレージ（USBメモリ、外付けHDDなど）に保存
+### 2. Add Tags
 
-**推奨バックアップ戦略:**
-- 定期的（週1回など）にアーカイブをエクスポート
-- 複数の物理メディアに分散保存（3-2-1ルール推奨）
-- パスワードは安全に別途管理
+```typescript
+// Via UI: Add tags in the note editor
+await api.addTagToNote(noteId, "important");
+await api.addTagToNote(noteId, "work");
+```
 
-## セキュリティに関する注意
+### 3. Search Notes
 
-- データベースの暗号化は現在簡易実装です。本番環境ではSQLCipherの統合を推奨します
-- パスワード派生には現在簡易的なハッシュを使用しています。本番環境ではArgon2またはPBKDF2の使用を推奨します
-- このアプリは個人使用・実験用です
+```typescript
+// Via UI: Type in search box
+const results = await api.searchNotes("important");
+// Returns: Array of matching notes
+```
 
-## ロードマップ
+### 4. Update Note
 
-- [ ] SQLCipherによる本格的なデータベース暗号化
-- [ ] アーカイブのインポート機能
-- [ ] Markdown編集サポート
-- [ ] 添付ファイル対応
-- [ ] マルチボルト対応（複数のデータベース管理）
-- [ ] クロスプラットフォームビルド最適化
+```typescript
+// Via UI: Edit and auto-save
+await api.updateNote(noteId, "Updated Title", "New content");
+```
 
-## ライセンス
+### 5. Export Archive
 
-MIT License - 詳細は LICENSE ファイルを参照してください。
+```typescript
+// Via UI: Click "アーカイブをエクスポート"
+const result = await api.exportEncryptedArchive(
+  "secure-password-123",
+  "/backups/vault-2025-01-15.enc"
+);
+// Creates encrypted backup file
+```
 
-## 貢献
+### End-to-End Flow Diagram
 
-イシューやプルリクエストを歓迎します！
+```
+┌─────────────┐
+│ Create Note │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│  Add Tags   │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│Search & Edit│
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│   Export    │
+│  to USB/HDD │
+└─────────────┘
+```
+
+### Testing the Flow
+
+```bash
+# Run frontend tests
+npm test
+
+# Run backend tests
+cargo test --manifest-path=src-tauri/Cargo.toml
+
+# All tests should pass ✓
+```
+
+## 🔒 Security Considerations
+
+### Current Implementation
+
+- **Export Encryption**: AES-256-GCM with 12-byte nonce
+- **Password Hashing**: Simple hash (⚠️ experimental)
+- **Database**: SQLite without encryption (future: SQLCipher)
+
+### Production Recommendations
+
+For production use, consider upgrading:
+
+1. **Password Derivation**: Implement Argon2 or PBKDF2
+2. **Database Encryption**: Integrate SQLCipher for at-rest encryption
+3. **Key Management**: Use OS-level keychain/credential management
+4. **Backup Encryption**: Add additional encryption layers
+
+**Note**: This is an experimental project. For sensitive data, always maintain multiple independent backups.
+
+## 🗺 Roadmap & Future Extensions
+
+### Phase 3: Enhanced Features
+- [ ] **Markdown Editor**: Rich text editing with live preview
+- [ ] **File Attachments**: Embed images, PDFs, and documents
+- [ ] **Import Archives**: Restore from encrypted backups
+- [ ] **Multi-Vault**: Manage multiple separate knowledge bases
+
+### Phase 4: Advanced Capabilities
+- [ ] **SQLCipher Integration**: True database-level encryption
+- [ ] **Sync Protocol**: Optional P2P sync between devices
+- [ ] **Plugin System**: Extensible architecture for custom features
+- [ ] **Mobile Companion**: iOS/Android viewer app
+
+### Phase 5: Ecosystem
+- [ ] **CLI Tools**: Command-line utilities for automation
+- [ ] **API Server**: Optional local REST API
+- [ ] **Browser Extension**: Quick capture from web pages
+- [ ] **Desktop Search Integration**: OS-level search providers
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute to these goals!
+
+## 🤝 Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
+
+- Development setup guide
+- Code style guidelines
+- Testing requirements
+- Pull request process
+
+Quick start for contributors:
+
+```bash
+git clone <your-fork>
+npm install
+npm test          # Ensure tests pass
+npm run lint:fix  # Fix any linting issues
+npm run dev       # Start developing!
+```
+
+## 📄 License
+
+MIT License - see LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+Built with:
+- [Tauri](https://tauri.app/) - Rust-powered desktop framework
+- [React](https://react.dev/) - UI library
+- [Zod](https://zod.dev/) - TypeScript-first validation
+- [Vite](https://vitejs.dev/) - Next-generation build tool
+
+## 📞 Support
+
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/yourusername/personal-knowledge-vault-local-first/issues)
+- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/yourusername/personal-knowledge-vault-local-first/discussions)
+- 📖 **Documentation**: See docs in this repository
 
 ---
 
-**免責事項**: このアプリケーションは実験的なプロジェクトです。重要なデータは必ず複数の方法でバックアップしてください。
+**Disclaimer**: This is an experimental project. Always maintain multiple backups of important data. The developers are not responsible for data loss.
+
+**Privacy Commitment**: This application never transmits your data to external servers. All processing happens locally on your device.
