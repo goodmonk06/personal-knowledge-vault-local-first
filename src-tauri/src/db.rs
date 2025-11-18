@@ -243,3 +243,122 @@ impl Database {
         Ok(tags)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    fn create_test_db() -> Database {
+        let temp_file = NamedTempFile::new().unwrap();
+        Database::new(temp_file.path().to_path_buf()).unwrap()
+    }
+
+    #[test]
+    fn test_create_and_get_note() {
+        let db = create_test_db();
+        let note = Note::new("Test Note".to_string(), "Test content".to_string());
+        let tags = vec!["test".to_string(), "example".to_string()];
+
+        // Create note
+        db.create_note(&note, &tags).unwrap();
+
+        // Get all notes
+        let notes = db.get_all_notes().unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].note.title, "Test Note");
+        assert_eq!(notes[0].note.content, "Test content");
+        assert_eq!(notes[0].tags.len(), 2);
+        assert!(notes[0].tags.contains(&"test".to_string()));
+    }
+
+    #[test]
+    fn test_update_note() {
+        let db = create_test_db();
+        let note = Note::new("Original".to_string(), "Original content".to_string());
+
+        db.create_note(&note, &vec!["tag1".to_string()]).unwrap();
+
+        // Update note
+        let mut updated_note = note.clone();
+        updated_note.title = "Updated".to_string();
+        updated_note.content = "Updated content".to_string();
+        updated_note.updated_at = chrono::Utc::now();
+
+        db.update_note(&updated_note, &vec!["tag2".to_string()]).unwrap();
+
+        // Verify update
+        let notes = db.get_all_notes().unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].note.title, "Updated");
+        assert_eq!(notes[0].note.content, "Updated content");
+        assert_eq!(notes[0].tags, vec!["tag2".to_string()]);
+    }
+
+    #[test]
+    fn test_delete_note() {
+        let db = create_test_db();
+        let note = Note::new("To Delete".to_string(), "Content".to_string());
+
+        db.create_note(&note, &vec![]).unwrap();
+        assert_eq!(db.get_all_notes().unwrap().len(), 1);
+
+        db.delete_note(&note.id).unwrap();
+        assert_eq!(db.get_all_notes().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_search_notes() {
+        let db = create_test_db();
+
+        let note1 = Note::new("Rust Programming".to_string(), "Learning Rust".to_string());
+        let note2 = Note::new("JavaScript Guide".to_string(), "JavaScript basics".to_string());
+        let note3 = Note::new("Rust Async".to_string(), "Async programming".to_string());
+
+        db.create_note(&note1, &vec![]).unwrap();
+        db.create_note(&note2, &vec![]).unwrap();
+        db.create_note(&note3, &vec![]).unwrap();
+
+        // Search for "Rust"
+        let results = db.search_notes("Rust").unwrap();
+        assert_eq!(results.len(), 2);
+
+        // Search for "JavaScript"
+        let results = db.search_notes("JavaScript").unwrap();
+        assert_eq!(results.len(), 1);
+
+        // Search for non-existent term
+        let results = db.search_notes("Python").unwrap();
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_get_all_tags() {
+        let db = create_test_db();
+
+        let note1 = Note::new("Note 1".to_string(), "Content 1".to_string());
+        let note2 = Note::new("Note 2".to_string(), "Content 2".to_string());
+
+        db.create_note(&note1, &vec!["rust".to_string(), "programming".to_string()]).unwrap();
+        db.create_note(&note2, &vec!["javascript".to_string(), "programming".to_string()]).unwrap();
+
+        let tags = db.get_all_tags().unwrap();
+        assert_eq!(tags.len(), 3);
+        assert_eq!(tags, vec!["javascript", "programming", "rust"]);
+    }
+
+    #[test]
+    fn test_multiple_notes_with_same_tags() {
+        let db = create_test_db();
+
+        let note1 = Note::new("Note 1".to_string(), "Content 1".to_string());
+        let note2 = Note::new("Note 2".to_string(), "Content 2".to_string());
+
+        db.create_note(&note1, &vec!["shared".to_string()]).unwrap();
+        db.create_note(&note2, &vec!["shared".to_string()]).unwrap();
+
+        let tags = db.get_all_tags().unwrap();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0], "shared");
+    }
+}

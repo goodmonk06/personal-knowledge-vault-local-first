@@ -22,3 +22,22 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment files
+.env
+.env.local
+
+# Test coverage
+coverage
+*.lcov
+
+# Database files (for local development)
+*.db
+*.db-shm
+*.db-wal
+
+# Encrypted backups (don't commit sensitive data)
+*.enc
+
+# OS files
+Thumbs.db

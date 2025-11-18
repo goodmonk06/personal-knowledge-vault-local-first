@@ -33,3 +33,5 @@ argon2 = "0.5"
 rand = "0.8"
 zip = "2.2"
 
+[dev-dependencies]
+tempfile = "3.13"

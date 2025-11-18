@@ -125,4 +125,51 @@ mod tests {
 
         assert_eq!(data.to_vec(), decrypted);
     }
+
+    #[test]
+    fn test_encrypt_decrypt_large_data() {
+        let data = vec![0u8; 10000];
+        let password = "secure_password_123";
+
+        let encrypted = encrypt_data(&data, password).unwrap();
+        let decrypted = decrypt_data(&encrypted, password).unwrap();
+
+        assert_eq!(data, decrypted);
+    }
+
+    #[test]
+    fn test_wrong_password_fails() {
+        let data = b"Secret data";
+        let password = "correct_password";
+        let wrong_password = "wrong_password";
+
+        let encrypted = encrypt_data(data, password).unwrap();
+        let result = decrypt_data(&encrypted, wrong_password);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encrypted_data_is_different() {
+        let data = b"Test data";
+        let password = "password";
+
+        let encrypted = encrypt_data(data, password).unwrap();
+
+        // Encrypted data should be different from original
+        assert_ne!(data.to_vec(), encrypted);
+        // Encrypted data should be longer (nonce + ciphertext + tag)
+        assert!(encrypted.len() > data.len());
+    }
+
+    #[test]
+    fn test_empty_data_encryption() {
+        let data = b"";
+        let password = "password";
+
+        let encrypted = encrypt_data(data, password).unwrap();
+        let decrypted = decrypt_data(&encrypted, password).unwrap();
+
+        assert_eq!(data.to_vec(), decrypted);
+    }
 }
